@@ -127,6 +127,26 @@ def main():
                      action="store_true", default=False,
                      help="for fisheye, the functions will check validity of condition number")
 
+    group.add_option("--omnidir-fix-skew",
+                     action="store_true", default=False,
+                     help="for omnidir, skew coefficient (alpha) is set to zero and stay zero")                     
+    group.add_option("--omnidir-fix-gamma",
+                     action="store_true", default=False,
+                     help="for omnidir, gamma coefficient is set to zero and stay zero")                                          
+    group.add_option("--omnidir-fix-center",
+                     action="store_true", default=False,
+                     help="for omnidir, center is set to zero and stay zero")                                          
+    group.add_option("--omnidir-fix-xi",
+                     action="store_true", default=False,
+                     help="for omnidir, xi is set to zero and stay zero")                                          
+    group.add_option("-k", "--k-coefficients",
+                     type="int", default=2, metavar="NUM_COEFFS",
+                     help="for omnidir, number of k distortion coefficients to use (up to 2, default %default)")
+    group.add_option("-p", "--p-coefficients",
+                     type="int", default=2, metavar="NUM_COEFFS",
+                     help="for omnidir, number of p distortion coefficients to use (up to 2, default %default)")
+
+
     group.add_option("--disable_calib_cb_fast_check", action='store_true', default=False,
                      help="uses the CALIB_CB_FAST_CHECK flag for findChessboardCorners")
     group.add_option("--max-chessboard-speed", type="float", default=-1.0,
@@ -204,6 +224,27 @@ def main():
     if (num_ks < 1):
         fisheye_calib_flags |= cv2.fisheye.CALIB_FIX_K1
 
+    num_ks = options.omnidir_k_coefficients
+    num_ps = options.omnidir_p_coefficients
+    omnidir_calib_flags = 0
+    if options.omnidir_fix_skew:
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_SKEW
+    if options.omnidir_fix_gamma:
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_GAMMA
+    if options.omnidir_fix_center:
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_CENTER
+    if options.omnidir_fix_xi:
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_XI        
+
+    if (num_ps < 2):
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_P2
+    if (num_ps < 1):
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_P1
+    if (num_ks < 2):
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_K2
+    if (num_ks < 1):
+        omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_K1        
+
     pattern = Patterns.Chessboard
     if options.pattern == 'circles':
         pattern = Patterns.Circles
@@ -220,7 +261,7 @@ def main():
         checkerboard_flags = cv2.CALIB_CB_FAST_CHECK
 
     rospy.init_node('cameracalibrator')
-    node = OpenCVCalibrationNode(boards, options.service_check, sync, calib_flags, fisheye_calib_flags, pattern, options.camera_name,
+    node = OpenCVCalibrationNode(boards, options.service_check, sync, calib_flags, fisheye_calib_flags, omnidir_calib_flags, pattern, options.camera_name,
                                  checkerboard_flags=checkerboard_flags, max_chessboard_speed=options.max_chessboard_speed,
                                  queue_size=options.queue_size)
     rospy.spin()
