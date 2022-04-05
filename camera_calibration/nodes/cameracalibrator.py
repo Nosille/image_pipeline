@@ -139,12 +139,9 @@ def main():
     group.add_option("--omnidir-fix-xi",
                      action="store_true", default=False,
                      help="for omnidir, xi is set to zero and stay zero")                                          
-    group.add_option("-k", "--k-coefficients",
-                     type="int", default=2, metavar="NUM_COEFFS",
-                     help="for omnidir, number of k distortion coefficients to use (up to 2, default %default)")
-    group.add_option("-p", "--p-coefficients",
-                     type="int", default=2, metavar="NUM_COEFFS",
-                     help="for omnidir, number of p distortion coefficients to use (up to 2, default %default)")
+    group.add_option("--omnidir-k-coefficients",
+                     type="int", default=4, metavar="NUM_COEFFS",
+                     help="for omnidir, number of radial distortion coefficients to use fixing to zero the rest (up to 4, default %default)")
 
 
     group.add_option("--disable_calib_cb_fast_check", action='store_true', default=False,
@@ -225,7 +222,6 @@ def main():
         fisheye_calib_flags |= cv2.fisheye.CALIB_FIX_K1
 
     num_ks = options.omnidir_k_coefficients
-    num_ps = options.omnidir_p_coefficients
     omnidir_calib_flags = 0
     if options.omnidir_fix_skew:
         omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_SKEW
@@ -236,9 +232,9 @@ def main():
     if options.omnidir_fix_xi:
         omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_XI        
 
-    if (num_ps < 2):
+    if (num_ks < 4):
         omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_P2
-    if (num_ps < 1):
+    if (num_ks < 3):
         omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_P1
     if (num_ks < 2):
         omnidir_calib_flags |= cv2.omnidir.CALIB_FIX_K2

@@ -80,7 +80,7 @@ class DisplayThread(threading.Thread):
     def run(self):
         cv2.namedWindow("display", cv2.WINDOW_NORMAL)
         cv2.setMouseCallback("display", self.opencv_calibration_node.on_mouse)
-        cv2.createTrackbar("Camera type: \n 0 : pinhole \n 1 : fisheye \n 2 : omnidir", "display", 0,1, self.opencv_calibration_node.on_model_change)
+        cv2.createTrackbar("Camera type: \n 0 : pinhole \n 1 : fisheye \n 2 : omnidir", "display", 0,2, self.opencv_calibration_node.on_model_change)
         cv2.createTrackbar("scale", "display", 0, 100, self.opencv_calibration_node.on_scale)
 
         while True:
@@ -177,12 +177,12 @@ class CalibrationNode:
     def handle_monocular(self, msg):
         if self.c == None:
             if self._camera_name:
-                self.c = MonoCalibrator(self._boards, self._calib_flags, self._fisheye_calib_flags, omnidir_calib_flags self._pattern, name=self._camera_name,
+                self.c = MonoCalibrator(self._boards, self._calib_flags, self._fisheye_calib_flags, self._omnidir_calib_flags, self._pattern, name=self._camera_name,
                                         checkerboard_flags=self._checkerboard_flags,
                                         max_chessboard_speed = self._max_chessboard_speed)
             else:
-                self.c = MonoCalibrator(self._boards, self._calib_flags, self._fisheye_calib_flags, omnidir_calib_flags, self._pattern,
-                                        checkerboard_flags=self.checkerboard_flags,
+                self.c = MonoCalibrator(self._boards, self._calib_flags, self._fisheye_calib_flags, self._omnidir_calib_flags, self._pattern,
+                                        checkerboard_flags=self._checkerboard_flags,
                                         max_chessboard_speed = self._max_chessboard_speed)
 
         # This should just call the MonoCalibrator
@@ -283,7 +283,7 @@ class OpenCVCalibrationNode(CalibrationNode):
 
         if model_select_val < 0.5: 
             model = CAMERA_MODEL.PINHOLE;
-        elif model_select_val < 1.5):
+        elif model_select_val < 1.5:
             model = CAMERA_MODEL.FISHEYE;
         else :
             model = CAMERA_MODEL.OMNIDIR;
