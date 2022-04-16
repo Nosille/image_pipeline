@@ -298,7 +298,7 @@ def _get_dist_model(dist_params, cam_model):
     elif CAMERA_MODEL.FISHEYE == cam_model:
         dist_model = "equidistant"
     elif CAMERA_MODEL.OMNIDIR == cam_model:
-        dist_model = "omnidir"
+        dist_model = "omnidirectional"
     else:
         dist_model = "unknown"
     return dist_model
@@ -765,6 +765,7 @@ class MonoCalibrator(Calibrator):
         opts = self.mk_object_points(boards)
         # If FIX_ASPECT_RATIO flag set, enforce focal lengths have 1/1 ratio
         intrinsics_in = numpy.eye(3, dtype=numpy.float64)
+        criteria = (cv2.TERM_CRITERIA_COUNT + cv2.TERM_CRITERIA_EPS, 100, 0.0001)
 
         if self.pattern == Patterns.ChArUco:
             if self.camera_model == CAMERA_MODEL.FISHEYE:
@@ -782,7 +783,8 @@ class MonoCalibrator(Calibrator):
                        self.size,
                        intrinsics_in,
                        None,
-                       flags = self.calib_flags)
+                       flags = self.calib_flags,
+                       criteria = criteria)
             # OpenCV returns more than 8 coefficients (the additional ones all zeros) when CALIB_RATIONAL_MODEL is set.
             # The extra ones include e.g. thin prism coefficients, which we are not interested in.
             self.distortion = dist_coeffs.flat[:8].reshape(-1, 1)
@@ -795,20 +797,24 @@ class MonoCalibrator(Calibrator):
             opts64 = numpy.asarray(opts, dtype=numpy.float64)
             opts = opts64
             reproj_err, self.intrinsics, self.distortion, rvecs, tvecs = cv2.fisheye.calibrate(
-                opts, ipts, self.size,
-                intrinsics_in, None, flags = self.fisheye_calib_flags)
+                opts, ipts, 
+                self.size,
+                intrinsics_in, 
+                None, 
+                flags = self.fisheye_calib_flags,
+                criteria = criteria)
 
         elif self.camera_model == CAMERA_MODEL.OMNIDIR:
             print("mono omnidir calibration...")
-            # WARNING: cv2.omnidir.calibrate wants float64 points
-            # ipts64 = numpy.asarray(ipts, dtype=numpy.float64)
-            # ipts = ipts64
-            # opts64 = numpy.asarray(opts, dtype=numpy.float64)
-            # opts = opts64
-            criteria = (cv2.TERM_CRITERIA_COUNT + cv2.TERM_CRITERIA_EPS, 30, 0.0001)
             reproj_err, self.intrinsics, self.xi, self.distortion, rvecs, tvecs, self.idx = cv2.omnidir.calibrate(
-                opts, ipts, self.size,
-                intrinsics_in, None, None, flags = self.omnidir_calib_flags, criteria = criteria)
+                opts, ipts, 
+                self.size,
+                intrinsics_in,
+                None, 
+                None, 
+                flags = self.omnidir_calib_flags, 
+                criteria = criteria)
+            self.distortion = numpy.append(self.distortion, self.xi, axis = 1)
 
         # R is identity matrix for monocular calibration
         self.R = numpy.eye(3, dtype=numpy.float64)
@@ -823,7 +829,6 @@ class MonoCalibrator(Calibrator):
         calibrated image are valid) to 1 (zoomed out, all pixels in
         original image are in calibrated image).
         """
-
         if self.camera_model == CAMERA_MODEL.PINHOLE:
             # NOTE: Prior to Electric, this code was broken such that we never actually saved the new
             # camera matrix. In effect, this enforced P = [K|0] for monocular cameras.
@@ -841,7 +846,18 @@ class MonoCalibrator(Calibrator):
             self.mapx, self.mapy = cv2.fisheye.initUndistortRectifyMap(self.intrinsics, self.distortion, self.R, self.P, self.size, cv2.CV_32FC1)
         elif self.camera_model == CAMERA_MODEL.OMNIDIR:
             self.P[:3,:3] = self.intrinsics[:3,:3]
-            self.mapx, self.mapy = cv2.omnidir.initUndistortRectifyMap(self.intrinsics, self.distortion, self.xi, self.R, self.P, self.size, cv2.CV_32FC1, cv2.omnidir.RECTIFY_CYLINDRICAL)
+            self.P[0,0] /= (1. + a)
+            self.P[1,1] /= (1. + a)
+            # self.P[0,0] = self.size[0] / 3.1415 * (1. + a)
+            # self.P[0,1] = 0
+            # self.P[0,2] = 0
+            # self.P[1,0] = 0
+            # self.P[1,1] = self.size[1] / 3.1415 * (1. + a)
+            # self.P[1,2] = 0
+            # self.P[2,0] = 0
+            # self.P[2,1] = 0
+            # self.P[2,2] = 1
+            self.mapx, self.mapy = cv2.omnidir.initUndistortRectifyMap(self.intrinsics, self.distortion[0, 0:4], self.xi, self.R, self.P, self.size, cv2.CV_32FC1, cv2.omnidir.RECTIFY_PERSPECTIVE)
 
     def remap(self, src):
         """
@@ -864,7 +880,7 @@ class MonoCalibrator(Calibrator):
         elif self.camera_model == CAMERA_MODEL.FISHEYE:
             return cv2.fisheye.undistortPoints(src, self.intrinsics, self.distortion, R = self.R, P = self.P)
         elif self.camera_model == CAMERA_MODEL.OMNIDIR:
-            return cv2.omnidir.undistortPoints(src, self.intrinsics, self.distortion, self.xi, R = self.R)
+            return cv2.omnidir.undistortPoints(src, self.intrinsics, self.distortion[0, 0:4], self.xi, R = self.R)
 
     def as_message(self):
         """ Return the camera calibration as a CameraInfo message """
@@ -1146,6 +1162,7 @@ class StereoCalibrator(Calibrator):
         self.T = numpy.zeros((3, 1), dtype=numpy.float64)
         self.R = numpy.eye(3, dtype=numpy.float64)
 
+        criteria = (cv2.TERM_CRITERIA_COUNT + cv2.TERM_CRITERIA_EPS, 1, 1e-5)
         if self.pattern == Patterns.ChArUco:
             # TODO: implement stereo ChArUco calibration
             raise NotImplemented("Stereo calibration not implemented for ChArUco boards")
@@ -1158,7 +1175,7 @@ class StereoCalibrator(Calibrator):
                                    self.r.intrinsics, self.r.distortion,
                                    self.R,                            # R
                                    self.T,                            # T
-                                   criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 1, 1e-5),
+                                   criteria = criteria,
                                    flags = flags)
             else:
                 cv2.stereoCalibrate(opts, lipts, ripts,
@@ -1189,7 +1206,7 @@ class StereoCalibrator(Calibrator):
                                    self.size,
                                    self.R,                            # R
                                    self.T,                            # T
-                                   criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 1, 1e-5), # 30, 1e-6
+                                   criteria = criteria, # 30, 1e-6
                                    flags = flags)
 
         elif self.camera_model == CAMERA_MODEL.OMNIDIR:
@@ -1211,8 +1228,10 @@ class StereoCalibrator(Calibrator):
                                    self.r.intrinsics, self.r.xi, self.r.distortion,
                                    #self.R,                            # R
                                    #self.T,                            # T
-                                   criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-5), # 30, 1e-6
+                                   criteria = criteria, # 30, 1e-6
                                    flags = flags)                           
+                self.l.distortion = numpy.append(self.l.distortion, self.l.xi, axis = 1) 
+                self.r.distortion = numpy.append(self.r.distortion, self.r.xi, axis = 1)                  
 
         self.set_alpha(0.0)
 
@@ -1280,10 +1299,10 @@ class StereoCalibrator(Calibrator):
                             # 1.0 )
             self.l.P[:3,:3] = numpy.dot(self.l.intrinsics,self.l.R)
             self.r.P[:3,:3] = numpy.dot(self.r.intrinsics,self.r.R)
-            cv2.omnidir.initUndistortRectifyMap(self.l.intrinsics, self.l.distortion, self.l.R, self.l.P, self.size, cv2.CV_32FC1,
-                                       self.l.mapx, self.l.mapy, cv2.omnidir.RECTIFY_CYLINDRICAL)
-            cv2.omnidir.initUndistortRectifyMap(self.r.intrinsics, self.r.distortion, self.r.R, self.r.P, self.size, cv2.CV_32FC1,
-                                       self.r.mapx, self.r.mapy, cv2.omnidir.RECTIFY_CYLINDRICAL)                                       
+            cv2.omnidir.initUndistortRectifyMap(self.l.intrinsics, self.l.distortion[0,0:4], self.l.xi, self.l.R, self.l.P, self.size, cv2.CV_32FC1,
+                                       self.l.mapx, self.l.mapy, cv2.omnidir.RECTIFY_PERSPECTIVE)
+            cv2.omnidir.initUndistortRectifyMap(self.r.intrinsics, self.r.distortion[0,0:4], self.r.xi, self.r.R, self.r.P, self.size, cv2.CV_32FC1,
+                                       self.r.mapx, self.r.mapy, cv2.omnidir.RECTIFY_PERSPECTIVE)                                       
 
     def as_message(self):
         """
